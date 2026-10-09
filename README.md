@@ -83,6 +83,14 @@ sudo apt upgrade -y
 sudo apt install -y build-essential flex bison libssl-dev libelf-dev bc dwarves git
 ```
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-1%20Install%20essential%20build%20tools.png" width="700">
+</p>
+
+<p align="center">
+  <b>Figure 1:</b> Install essential build tools
+</p>
+
 These packages are required to compile the Linux kernel and kernel modules.
 
 ---
@@ -103,11 +111,27 @@ cd WSL2-Linux-Kernel
 
 > `--depth=1` downloads only the latest commit, saving time and disk space.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-2%20%20Clone%20the%20kernel%20source.png" width="900">
+</p>
+
+<p align="center">
+  <b>Figure 2:</b> Clone the kernel source
+</p>
+
 ### 4.2 Verify the source
 
 ```bash
 ls Microsoft/config-wsl
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-3%20Verify%20the%20source%20%26%20Clean%20any%20previous%20build%20artifacts.png" width="900">
+</p>
+
+<p align="center">
+  <b>Figure 3:</b> Verify the source and clean previous build artifacts
+</p>
 
 You should see the official WSL kernel configuration file — the exact configuration Microsoft uses for the stock WSL2 kernel.
 
@@ -138,11 +162,27 @@ cp Microsoft/config-wsl .config
 make olddefconfig
 ```
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-4%20Use%20the%20official%20WSL%20configuration%20%26%20Make%20the%20configuration%20consistent%20with%20the%20current%20source.png" width="900">
+</p>
+
+<p align="center">
+  <b>Figure 4:</b> Use the official WSL configuration and make it consistent with the current source
+</p>
+
 ### 5.4 Prepare the kernel for external module building
 
 ```bash
 make -j$(nproc) modules_prepare
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-5%20Prepare%20the%20kernel%20for%20external%20module%20building.png" width="1000">
+</p>
+
+<p align="center">
+  <b>Figure 5:</b> Prepare the kernel for external module building
+</p>
 
 This sets up headers, scripts, and version infrastructure — but on its own it is **not enough** to produce a usable `Module.symvers` (see Section 10 for what goes wrong if you stop here).
 
@@ -151,6 +191,15 @@ This sets up headers, scripts, and version infrastructure — but on its own it 
 ```bash
 make -j$(nproc) modules
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-6%20Build%20the%20in-tree%20modules%20to%20generate%20a%20complete%20Module.symvers.png" width="1000">
+</p>
+
+<p align="center">
+  <b>Figure 6:</b> Build the in-tree modules to generate a complete Module.symvers
+</p>
+
 
 This compiles all in-tree modules and — critically — writes the real `Module.symvers`, containing every exported kernel symbol (`_printk`, `module_layout`, `__fentry__`, `__x86_return_thunk`, etc.). This is the file your out-of-tree module links against.
 
@@ -177,6 +226,13 @@ With the tree prepared, build the actual kernel image:
 cd ~/WSL2-Linux-Kernel
 make -j$(nproc)
 ```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-7%20Building%20the%20Custom%20Kernel%20Image%20(bzImage).png" width="1000">
+</p>
+
+<p align="center">
+  <b>Figure 7:</b> Building the Custom Kernel Image (bzImage)
+</p>
 
 This also takes a while (comparable to the modules build). When it finishes you'll see a line like:
 
@@ -189,6 +245,14 @@ Confirm the file exists:
 ```bash
 ls -l arch/x86/boot/bzImage
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-8%20Confirm%20the%20file%20exists.png" width="700">
+</p>
+
+<p align="center">
+  <b>Figure 8:</b> Confirm the file exists
+</p>
 
 ---
 
@@ -246,6 +310,13 @@ Wait 5–10 seconds, then reopen your Ubuntu terminal.
 uname -r
 cat /proc/version
 ```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-9%20Verify%20you're%20running%20your%20own%20kernel.png" width="700">
+</p>
+
+<p align="center">
+  <b>Figure 9:</b> Verify you're running your own kernel
+</p>
 
 You should see your kernel version string, usually with a trailing `+` (e.g. `6.18.54.1-microsoft-standard-WSL2+`) — the `+` is expected and confirms it was built from source rather than being the stock Microsoft binary. The version number will typically differ from the stock kernel's version too.
 
@@ -310,6 +381,13 @@ cd ~/KERNEL_DEV/Module_files
 make clean
 make
 ```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-10%20Building%20and%20Loading%20the%20Module.png" width="700">
+</p>
+
+<p align="center">
+  <b>Figure 10:</b> Building and Loading the Module
+</p>
 
 Expected clean output ends with:
 
@@ -345,7 +423,13 @@ hello: module loaded - Hello from the kernel!
 ...
 hello: module unloaded - Goodbye from the kernel!
 ```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/soumya-dev-nayak/Kernel-Module-Development-on-WSL2/main/Pics/Fig-11%20Load%20it%20and%20test.png" width="700">
+</p>
 
+<p align="center">
+  <b>Figure 11:</b> Load it and test
+</p>
 The "taints kernel" line is expected and harmless — it just flags that an out-of-tree module was loaded.
 
 ---
