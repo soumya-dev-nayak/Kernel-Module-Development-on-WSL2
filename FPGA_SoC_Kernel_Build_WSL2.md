@@ -277,16 +277,33 @@ export CROSS_COMPILE=aarch64-linux-gnu-
 
 > `socfpga_defconfig` and `tegra_defconfig` exist for 32-bit ARM only; on arm64 start from the generic `defconfig` or the vendor tree. Jetson GPU/DLA support depends on NVIDIA's out-of-tree modules, so Jetson realistically keeps its own kernel image. Verify these paths in the exact tree you use.
 
-After loading the base config, run `make menuconfig` and confirm these options:
+Run `menuconfig` from the kernel source root to inspect or modify the kernel configuration:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+make ARCH=arm menuconfig
+```
+
+If the build fails because the ncurses development library is missing, install it:
+
+```bash
+sudo apt install -y libncurses-dev
+```
+
+Verify that both FPGA Manager driver options are enabled:
+
+```bash
+grep "CONFIG_FPGA_MGR" ~/linux-6.12.100-armv7-fpga/.config
+```
+
+Expected output includes:
 
 ```text
-CONFIG_FPGA=y
-CONFIG_FPGA_MGR=y
-CONFIG_FPGA_BRIDGE=y
-CONFIG_FPGA_REGION=y
-CONFIG_OF_OVERLAY=y
-CONFIG_OF_CONFIGFS=y
+CONFIG_FPGA_MGR_SOCFPGA=y
+CONFIG_FPGA_MGR_ZYNQ_FPGA=y
 ```
+
+These settings confirm that both drivers are enabled in the kernel configuration. Actual operation on each vendor's hardware also depends on compatible hardware, platform integration, and the device tree.
 
 **Device Tree for Agilex:** use `intel-soc-reference.dts` as a template, then (1) set the `compatible` string for your board, (2) replace every address with values from the Agilex HPS Technical Reference Manual, and (3) update the CPU nodes to the Cortex-A53 (or later) cores of your device.
 
