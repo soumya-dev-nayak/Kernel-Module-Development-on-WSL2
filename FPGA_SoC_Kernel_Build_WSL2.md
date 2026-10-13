@@ -153,6 +153,10 @@ echo $ARCH $CROSS_COMPILE
 > These variables last only for the current terminal session; set them again after reopening the terminal. `DTC_FLAGS=--symbols` makes `dtc` emit symbol information, which Device Tree Overlays need at runtime.
 
 ### Step 9: Generate the config and build
+`libelf.h`, install the dependency 
+```bash
+sudo apt install -y libelf-dev
+```
 
 ```bash
 make armv7_fpga_defconfig
