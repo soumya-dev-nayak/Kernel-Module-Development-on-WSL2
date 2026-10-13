@@ -292,6 +292,43 @@ CONFIG_OF_CONFIGFS=y
 
 This section boots the custom Linux 6.12.100 kernel in QEMU using the `vexpress-a9` virtual machine. It also documents how to troubleshoot Device Tree Blob (DTB) errors and verify that QEMU is running the intended ikwzm-based kernel rather than the separate upstream Linux build.
 
+### Prerequisite: Install and verify QEMU
+
+QEMU is required to boot and test the custom ARM kernel without physical target hardware. If it is not already installed, install the ARM system emulator in WSL Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y qemu-system-arm
+```
+
+Verify the installation:
+
+```bash
+qemu-system-arm --version
+```
+
+**Expected output (representative):**
+
+```text
+QEMU emulator version 8.x.x
+```
+
+The exact version depends on the Ubuntu package repository.
+
+Confirm that the ARM emulator is available:
+
+```bash
+command -v qemu-system-arm
+```
+
+**Expected output (representative):**
+
+```text
+/usr/bin/qemu-system-arm
+```
+
+If both checks succeed, QEMU is ready for the `vexpress-a9` boot procedure described below. If QEMU is already installed, skip the installation commands and perform the verification checks only.
+
 ### Step 14: Understand the QEMU test environment
 
 QEMU allows us to test kernel booting and development without requiring the physical target hardware.
