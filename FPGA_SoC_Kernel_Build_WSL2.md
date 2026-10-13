@@ -285,3 +285,665 @@ CONFIG_OF_CONFIGFS=y
 ```
 
 **Device Tree for Agilex:** use `intel-soc-reference.dts` as a template, then (1) set the `compatible` string for your board, (2) replace every address with values from the Agilex HPS Technical Reference Manual, and (3) update the CPU nodes to the Cortex-A53 (or later) cores of your device.
+
+---
+
+## 10. Boot the custom kernel in QEMU and verify its identity
+
+This section boots the custom Linux 6.12.100 kernel in QEMU using the `vexpress-a9` virtual machine. It also documents how to troubleshoot Device Tree Blob (DTB) errors and verify that QEMU is running the intended ikwzm-based kernel rather than the separate upstream Linux build.
+
+### Step 14: Understand the QEMU test environment
+
+QEMU allows us to test kernel booting and development without requiring the physical target hardware.
+
+| Component       | Configuration                     | Purpose                                                         |
+| --------------- | --------------------------------- | --------------------------------------------------------------- |
+| Virtual machine | `vexpress-a9`                     | Emulates an ARM Versatile Express platform with a Cortex-A9 CPU |
+| Kernel          | Custom ikwzm-based Linux 6.12.100 | Kernel being tested                                             |
+| Kernel image    | `arch/arm/boot/zImage`            | Compressed ARM kernel image                                     |
+| Device Tree     | `vexpress-v2p-ca9.dtb`            | Describes the emulated VExpress-A9 hardware                     |
+| RAM             | 512 MiB                           | Memory allocated to the virtual machine                         |
+| Root filesystem | `~/qemu-test/initramfs.cpio.gz`   | Minimal BusyBox userspace containing `/init` and a shell        |
+| Console         | `ttyAMA0`                         | Serial console used to interact with the kernel                 |
+
+**Important distinction:** QEMU is emulating the VExpress-A9 platform, not an Intel Agilex FPGA board. Booting an FPGA-focused kernel in QEMU verifies that the kernel works with the emulated platform; it does not validate the kernel's FPGA Manager, DMA, or hardware-specific functionality on a physical board.
+
+### Step 15: Locate the kernel image and Device Tree Blob
+
+First, navigate to the custom kernel source tree:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+```
+
+Verify that the kernel image exists:
+
+```bash
+ls -lh arch/arm/boot/zImage
+```
+
+Locate the VExpress-A9 DTB:
+
+```bash
+find arch/arm/boot -name 'vexpress-v2p-ca9.dtb'
+```
+
+In this kernel tree, the resulting path is:
+
+```text
+arch/arm/boot/dts/arm/vexpress-v2p-ca9.dtb
+```
+
+Verify the DTB file:
+
+```bash
+file arch/arm/boot/dts/arm/vexpress-v2p-ca9.dtb
+```
+
+Expected output identifies it as a Device Tree Blob. Its size may vary with the source and build configuration.
+
+**Why the exact path matters:** Kernel source trees can organize Device Trees into architecture- or vendor-specific subdirectories. A correct filename is insufficient if QEMU is given the wrong path.
+
+### Step 16: Build the Device Trees if the DTB is missing
+
+If the find command returns no result, build the Device Trees using the ARM cross-compiler:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- dtbs
+```
+
+Then locate the file again:
+
+```bash
+find arch/arm/boot -name 'vexpress-v2p-ca9.dtb'
+```
+
+During our setup, the DTB was initially missing because the Device Trees had not yet been built in this source tree. Running the dtbs target successfully generated the VExpress-A9 DTB, along with other enabled platform Device Trees.
+
+### Step 17: Boot the custom kernel in QEMU
+
+Run the following command from `~/linux-6.12.100-armv7-fpga`:
+
+```bash
+qemu-system-arm \
+  -M vexpress-a9 \
+  -m 512M \
+  -kernel arch/arm/boot/zImage \
+  -dtb arch/arm/boot/dts/arm/vexpress-v2p-ca9.dtb \
+  -initrd ~/qemu-test/initramfs.cpio.gz \
+  -append "console=ttyAMA0,115200 rdinit=/init" \
+  -nographic \
+  -no-reboot
+```
+
+The arguments serve these purposes:
+
+- `-M vexpress-a9`: selects the emulated ARM platform.
+- `-m 512M`: allocates 512 MiB of RAM.
+- `-kernel`: specifies the kernel image.
+- `-dtb`: specifies the hardware description for the emulated platform.
+- `-initrd`: loads the compressed initramfs containing the minimal userspace.
+- `console=ttyAMA0,115200`: directs kernel console output to the serial port at 115200 baud.
+- `rdinit=/init`: runs `/init` from the initramfs as the initial userspace process.
+- `-nographic`: uses the terminal for console interaction.
+- `-no-reboot`: prevents QEMU from automatically restarting if the guest kernel shuts down or panics.
+
+A successful boot reaches a shell similar to:
+
+```text
+========================================
+ ARM Linux 6.12.100 is running
+ Minimal BusyBox root filesystem
+========================================
+
+Linux (none) 6.12.100-armv7-fpga-g52a355b23cd2-dirty #3 SMP PREEMPT ...
+Interactive shell starting...
+/ #
+```
+
+The exact build timestamp and version suffix may differ if the kernel is rebuilt.
+
+The message below may also appear:
+
+```text
+/bin/sh: can't access tty; job control turned off
+```
+
+This is expected with a minimal shell that does not have a controlling terminal. It does not prevent basic shell commands from working.
+
+### Step 18: Verify which kernel is running
+
+A successful boot alone does not prove that QEMU loaded the intended kernel. Linux exposes the running kernel's release and build information through several interfaces.
+
+Inside the QEMU shell, run:
+
+```sh
+uname -a
+cat /proc/version
+cat /proc/sys/kernel/osrelease
+cat /proc/cmdline
+```
+
+Our running kernel reported:
+
+```text
+6.12.100-armv7-fpga-g52a355b23cd2-dirty
+```
+
+The kernel release can also be obtained from the source tree in the WSL terminal. Exit QEMU using `Ctrl+A`, followed by `X`, and run:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- kernelrelease
+```
+
+The output should match the release reported by the running kernel:
+
+```text
+6.12.100-armv7-fpga-g52a355b23cd2-dirty
+```
+
+Compare this with the separate upstream source tree:
+
+```bash
+cd ~/qemu-test/linux-6.12.100
+make ARCH=arm kernelrelease
+```
+
+Our upstream tree reported:
+
+```text
+6.12.100
+```
+
+The matching custom release string is strong evidence that the running kernel came from the ikwzm-based build. The upstream tree's different release string distinguishes the two builds.
+
+> **Note:** Kernel release strings can be customized. For stronger provenance, retain the source revision, build configuration, and exact kernel artifact used to launch QEMU. A matching release string alone is not cryptographic proof of a binary's origin.
+
+### Step 19: Understand the -dirty suffix
+
+Our kernel release included:
+
+```text
+6.12.100-armv7-fpga-g52a355b23cd2-dirty
+```
+
+The components indicate:
+
+- `6.12.100`: the Linux kernel base version.
+- `armv7-fpga`: the custom local version identifying the FPGA-focused build.
+- `g52a355b23cd2`: the abbreviated Git revision identifier.
+- `dirty`: the source tree contained changes that Git considered uncommitted when the version string was generated.
+
+The suffix is not an error and does not prevent the kernel from booting. It is useful for distinguishing custom builds.
+
+### Step 20: Check the FPGA-related kernel configuration
+
+After exiting QEMU, inspect the active configuration of the custom kernel:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+grep -E '^CONFIG_(FPGA|FPGA_MGR_SOCFPGA|FPGA_BRIDGE|FPGA_REGION|OF_OVERLAY)=' .config
+```
+
+Our build had these options enabled:
+
+```text
+CONFIG_FPGA=y
+CONFIG_FPGA_MGR_SOCFPGA=y
+CONFIG_FPGA_BRIDGE=y
+CONFIG_FPGA_REGION=y
+CONFIG_OF_OVERLAY=y
+```
+
+These entries establish that the corresponding framework or driver options are enabled in the build configuration. They do not prove that a matching physical device exists or that its driver has successfully bound to hardware.
+
+In particular, the VExpress-A9 Device Tree does not describe the actual SoCFPGA hardware required by the SoCFPGA FPGA Manager driver. Therefore, empty FPGA Manager or FPGA Bridge device directories in QEMU are not evidence that these configuration options were ignored.
+
+### Troubleshooting Reference
+
+| Symptom | Cause | Resolution |
+|----------|---------|------------|
+| Couldn't open `dtb` file ... | Incorrect DTB path or missing DTB | Locate the file with `find`; if necessary, build it using `make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- dtbs`. |
+| `find` returns no DTB files | Device Trees have not been built in this source tree | Run the `dtbs` target and repeat the search. |
+| QEMU boots but the kernel release is unexpected | A different kernel image may have been supplied | Compare `/proc/sys/kernel/osrelease` with `make kernelrelease` in the intended source tree. |
+| FPGA Manager directory is empty | No matching FPGA Manager device was instantiated and bound on the emulated platform | Check the Device Tree and platform support; do not assume that compiling the driver creates a hardware device. |
+| `/bin/sh: can't access tty; job control turned off` | Minimal initramfs shell has no controlling terminal | Basic shell operation can continue; configure a proper controlling terminal later if job control is required. |
+| PulseAudio or PipeWire warnings appear in the host terminal | Host audio configuration warnings | These are generally unrelated to kernel boot; investigate the actual QEMU error if startup fails. |
+
+---
+
+## 11. External kernel module development and testing
+
+This section demonstrates how to develop an external Linux kernel module for the custom ikwzm-based Linux 6.12.100 kernel. The module is cross-compiled for ARM, included in the BusyBox initramfs, and tested in QEMU.
+
+The initial module, `kernel_data_logger`, verifies the module lifecycle before we introduce hardware-specific functionality such as MMIO, interrupts, and DMA.
+
+### Step 21: Understand the external module workflow
+
+An external kernel module is compiled separately from the main kernel image and loaded into a running kernel when required.
+
+The workflow is:
+
+1. Verify that the kernel supports loadable modules.
+2. Prepare the kernel source tree for external module compilation.
+3. Create the module source file and Makefile.
+4. Cross-compile the module for the target architecture.
+5. Copy the `.ko` file into the initramfs.
+6. Boot the matching kernel in QEMU.
+7. Load the module, inspect its logs, and unload it.
+
+**Important:** The module must be built against the appropriate kernel source tree and configuration. A module built for a different kernel release or incompatible configuration may be rejected.
+
+### Step 22: Verify kernel module support
+
+Exit QEMU using `Ctrl+A`, followed by `X`. In the WSL terminal, navigate to the ikwzm-based kernel tree:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+```
+
+Check the relevant configuration options:
+
+```bash
+grep -E '^CONFIG_MODULES=|^CONFIG_MODVERSIONS=' .config
+```
+
+Interpret the results:
+
+- `CONFIG_MODULES=y`: loadable kernel modules are enabled.
+- `CONFIG_MODVERSIONS=y`: the kernel uses symbol versioning to check compatibility between modules and exported kernel symbols.
+- If `CONFIG_MODULES` is disabled, external modules cannot be loaded until module support is enabled and the kernel is rebuilt.
+
+### Step 23: Prepare the kernel source tree
+
+Run:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules_prepare
+```
+
+This prepares generated headers and other build infrastructure needed for external module compilation.
+
+Confirm the kernel release:
+
+```bash
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- kernelrelease
+```
+
+Our running kernel used this release:
+
+```text
+6.12.100-armv7-fpga-g52a355b23cd2-dirty
+```
+
+Check whether the symbol-version file exists:
+
+```bash
+ls -lh Module.symvers 2>/dev/null || echo "Module.symvers is not present"
+```
+
+**Important:** `modules_prepare` does not generate a complete `Module.symvers` when `CONFIG_MODVERSIONS=y`. In that situation, a full kernel build may be required to generate the symbol-version information needed for a compatible external module.
+
+### Step 24: Create the module source directory
+
+Create the project directory:
+
+```bash
+mkdir -p ~/KERNEL_DEV/kernel_data_logger
+cd ~/KERNEL_DEV/kernel_data_logger
+```
+
+The project structure will initially be:
+
+```text
+kernel_data_logger/
+├── kernel_data_logger.c
+└── Makefile
+```
+
+The `.c` file contains the module implementation, while the Makefile instructs the kernel build system to compile it.
+
+### Step 25: Write the kernel module
+
+Create `kernel_data_logger.c`:
+
+```bash
+cat > kernel_data_logger.c <<'EOF'
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+
+static int __init kernel_data_logger_init(void)
+{
+    pr_info("kernel_data_logger: Module loaded successfully\n");
+    pr_info("kernel_data_logger: Ready for data-logging development\n");
+    return 0;
+}
+
+static void __exit kernel_data_logger_exit(void)
+{
+    pr_info("kernel_data_logger: Module unloaded successfully\n");
+}
+
+module_init(kernel_data_logger_init);
+module_exit(kernel_data_logger_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Kernel Design Project");
+MODULE_DESCRIPTION("First external kernel module for FPGA data logger development");
+MODULE_VERSION("1.0");
+EOF
+```
+
+#### Understanding the source code
+
+| Element | Purpose |
+|---|---|
+| `#include <linux/init.h>` | Provides initialization and exit annotations. |
+| `#include <linux/module.h>` | Provides kernel module definitions and metadata macros. |
+| `#include <linux/kernel.h>` | Provides kernel facilities, including logging macros. |
+| `static int __init kernel_data_logger_init(void)` | Initialization function executed when the module loads successfully enough to begin initialization. |
+| `pr_info()` | Writes informational messages to the kernel log. |
+| `return 0;` | Indicates successful initialization. A negative error code would indicate failure. |
+| `static void __exit kernel_data_logger_exit(void)` | Cleanup function called when the module is unloaded. |
+| `module_init(...)` | Registers the module initialization function. |
+| `module_exit(...)` | Registers the module cleanup function. |
+| `MODULE_LICENSE("GPL")` | Declares the module's license and avoids the proprietary-module taint associated with a non-GPL-compatible license declaration. |
+| `MODULE_AUTHOR`, `MODULE_DESCRIPTION`, `MODULE_VERSION` | Provide module metadata. |
+
+The module currently logs messages only. It does not yet acquire data or interact with FPGA hardware.
+
+### Step 26: Create the external module Makefile
+
+Create a file named exactly `Makefile`:
+
+```bash
+cat > Makefile <<'EOF'
+obj-m += kernel_data_logger.o
+EOF
+```
+
+The key directive is:
+
+```makefile
+obj-m += kernel_data_logger.o
+```
+
+Here, `obj-m` tells the kernel build system to build `kernel_data_logger.o` as an external loadable module. The resulting module is `kernel_data_logger.ko`.
+
+Unlike a standalone userspace C program, this Makefile delegates compilation and linking to the kernel's build system.
+
+### Step 27: Compile the module for ARM
+
+Use the same ikwzm-based kernel tree and ARM cross-compiler used for the running kernel.
+
+First, prepare the build tree:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules_prepare
+```
+
+Then build the external module:
+
+```bash
+cd ~/KERNEL_DEV/kernel_data_logger
+
+make -C ~/linux-6.12.100-armv7-fpga \
+    ARCH=arm \
+    CROSS_COMPILE=arm-linux-gnueabihf- \
+    M="$PWD" \
+    modules
+```
+
+The options mean:
+
+- `-C`: enter the specified kernel source/build directory.
+- `ARCH=arm`: select the 32-bit ARM kernel architecture.
+- `CROSS_COMPILE=arm-linux-gnueabihf-`: use the ARM cross-compilation toolchain.
+- `M="$PWD"`: identify the external module directory.
+- `modules`: build the loadable module.
+
+Verify the output:
+
+```bash
+file kernel_data_logger.ko
+```
+
+Inspect the module metadata:
+
+```bash
+modinfo kernel_data_logger.ko
+```
+
+Check `vermagic`, which records the kernel release and other compatibility-related build information. It should correspond to the intended running kernel.
+
+If compilation fails due to missing `Module.symvers`, symbol versioning, or mismatched generated headers, resolve that problem before proceeding. Do not assume that `modules_prepare` alone always provides everything required.
+
+### Step 28: Locate the initramfs root filesystem
+
+Our existing initramfs source directory is:
+
+```text
+~/qemu-test/rootfs-arm
+```
+
+The compressed initramfs used by QEMU is:
+
+```text
+~/qemu-test/initramfs.cpio.gz
+```
+
+The initramfs contains a minimal BusyBox userspace, including `/init`, a shell, and basic utilities. The external module must be copied into this filesystem so that `insmod` can access it after boot.
+
+Calculate the kernel release dynamically:
+
+```bash
+KREL=$(make -s -C ~/linux-6.12.100-armv7-fpga \
+    ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- kernelrelease)
+
+echo "$KREL"
+```
+
+Create a directory for the module:
+
+```bash
+mkdir -p ~/qemu-test/rootfs-arm/lib/modules/$KREL/extra
+```
+
+Copy the compiled module:
+
+```bash
+cp ~/KERNEL_DEV/kernel_data_logger/kernel_data_logger.ko \
+   ~/qemu-test/rootfs-arm/lib/modules/$KREL/extra/
+```
+
+The resulting path is:
+
+```text
+/lib/modules/<kernel-release>/extra/kernel_data_logger.ko
+```
+
+The `extra` directory is a convenient location for a manually installed external module. It is not mandatory for `insmod`, which accepts a direct file path.
+
+### Step 29: Rebuild the initramfs
+
+Back up the current archive before rebuilding it:
+
+```bash
+cp ~/qemu-test/initramfs.cpio.gz \
+   ~/qemu-test/initramfs.cpio.gz.bak
+```
+
+Rebuild the compressed archive from the initramfs root:
+
+```bash
+cd ~/qemu-test/rootfs-arm
+
+find . -print0 | cpio --null -o --format=newc --quiet \
+    | gzip -1 > ~/qemu-test/initramfs.cpio.gz
+```
+
+This packages the root filesystem using the `newc` CPIO format and compresses it with gzip.
+
+The command assumes that the existing root filesystem is complete and that the current shell has the required `cpio` and `gzip` tools. Verify the resulting archive before booting:
+
+```bash
+ls -lh ~/qemu-test/initramfs.cpio.gz
+```
+
+If rebuilding fails, retain the backup and inspect the error rather than replacing the archive with an incomplete filesystem.
+
+### Step 30: Boot QEMU with the module-containing initramfs
+
+From the ikwzm kernel tree, run:
+
+```bash
+cd ~/linux-6.12.100-armv7-fpga
+
+qemu-system-arm \
+  -M vexpress-a9 \
+  -m 512M \
+  -kernel arch/arm/boot/zImage \
+  -dtb arch/arm/boot/dts/arm/vexpress-v2p-ca9.dtb \
+  -initrd ~/qemu-test/initramfs.cpio.gz \
+  -append "console=ttyAMA0,115200 rdinit=/init" \
+  -nographic \
+  -no-reboot
+```
+
+Wait for the BusyBox shell prompt:
+
+```text
+/ #
+```
+
+### Step 31: Verify the module file inside QEMU
+
+At the QEMU shell, list the module directory:
+
+```sh
+ls -R /lib/modules
+```
+
+The module should be present under the kernel-release directory:
+
+```text
+/lib/modules/6.12.100-armv7-fpga-g52a355b23cd2-dirty/extra/kernel_data_logger.ko
+```
+
+The exact path depends on the release used to build the module.
+
+### Step 32: Load the module
+
+Use `insmod` with the exact path shown in the previous step:
+
+```sh
+insmod /lib/modules/6.12.100-armv7-fpga-g52a355b23cd2-dirty/extra/kernel_data_logger.ko
+```
+
+If the kernel accepts the module, the kernel log will include messages similar to:
+
+```text
+kernel_data_logger: Module loaded successfully
+kernel_data_logger: Ready for data-logging development
+```
+
+Inspect the most recent kernel messages:
+
+```sh
+dmesg | tail -n 20
+```
+
+The messages are generated by the module's `pr_info()` calls.
+
+### Step 33: Verify that the module is loaded
+
+Run:
+
+```sh
+cat /proc/modules
+```
+
+Our successful test showed:
+
+```text
+kernel_data_logger 12288 0 - Live 0xbf000000 (O)
+```
+
+The fields describe the module's name, size, use count, dependency information, state, and load address. The final `(O)` indicates that the module is out-of-tree.
+
+The load address and module size may vary between builds.
+
+### Step 34: Unload the module
+
+Remove the module:
+
+```sh
+rmmod kernel_data_logger
+```
+
+Check the kernel log:
+
+```sh
+dmesg | tail -n 20
+```
+
+The expected cleanup message is:
+
+```text
+kernel_data_logger: Module unloaded successfully
+```
+
+Optionally, check that the module is no longer listed:
+
+```sh
+cat /proc/modules
+```
+
+The `kernel_data_logger` entry should be absent.
+
+### Step 35: Understand the out-of-tree module taint message
+
+During our successful load, the kernel printed:
+
+```text
+kernel_data_logger: loading out-of-tree module taints kernel.
+```
+
+This is expected when loading a module built outside the kernel source tree. Linux records the kernel's taint state so that diagnostic information can distinguish a kernel running with externally supplied code.
+
+The message does not mean that the module failed to load. In our test, the subsequent initialization messages and `/proc/modules` entry confirmed success.
+
+The taint state is diagnostic information; unloading the module does not necessarily clear the kernel's taint flag.
+
+### Troubleshooting reference
+
+| Error or symptom | Likely cause | Action |
+|---|---|---|
+| `CONFIG_MODULES` is not enabled | Kernel was built without loadable-module support | Enable module support and rebuild the kernel. |
+| `Invalid module format` | Kernel release, architecture, configuration, or module compatibility mismatch | Compare `uname -r`, `modinfo`, `vermagic`, and the kernel build configuration. |
+| `Unknown symbol` | A required kernel symbol is unavailable or symbol-version information is incompatible | Check dependencies, configuration, and `Module.symvers`; rebuild the module against the correct kernel build. |
+| Missing `Module.symvers` | Symbol-version data was not generated or is unavailable | If `CONFIG_MODVERSIONS=y`, perform the appropriate full kernel build to generate the required symbol information. |
+| `insmod: can't open ...` | Incorrect path or module not included in the initramfs | Check the path using `ls -R /lib/modules`. |
+| Module loads but expected messages are absent | Different module binary or kernel log inspection issue | Check `dmesg`, module metadata, and the file copied into the initramfs. |
+| `Module is in use` during removal | The module has active users or dependencies | Inspect its use count and remove dependencies or users before unloading. |
+| Out-of-tree taint message | Module was built outside the kernel source tree | Expected diagnostic warning; verify the actual load result. |
+
+### Completion criteria
+
+The external module workflow is verified when all of the following succeed:
+
+- The module compiles as an ARM `.ko` file.
+- The module is present in the initramfs.
+- The intended kernel boots in QEMU.
+- `insmod` succeeds and the initialization messages appear in `dmesg`.
+- `/proc/modules` lists `kernel_data_logger`.
+- `rmmod` succeeds and the cleanup message appears in `dmesg`.
+
+At this stage, the module verifies the kernel-module lifecycle only. The next development step is to add configurable parameters and a userspace-visible status interface, then proceed toward device-specific platform drivers, MMIO, interrupts, and DMA when the target hardware and its Device Tree are available.
