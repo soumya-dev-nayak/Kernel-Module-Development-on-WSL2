@@ -608,7 +608,7 @@ kernel_data_logger/
 The `.c` file contains the module implementation, while the Makefile instructs the kernel build system to compile it.
 
 ### Step 25: Write the kernel module
-
+Here you can paste this code Snippet directly into your Linux Terminal (it will automatically create the `.C` file)
 Create `kernel_data_logger.c`:
 
 ```bash
